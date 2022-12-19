@@ -1,4 +1,4 @@
-﻿# CS5700, Project 1: Simple Client
+﻿# Equation Solver with sockets 
 
 # Approach 
 
