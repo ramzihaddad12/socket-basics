@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+
+import socket
+from tokenizer import Tokenizer
+from buildTree import BuildTree
+from calculator import Calculator
+import ssl
+import argparse
+
+# parsing the inputs from the command line 
+parser = argparse.ArgumentParser(description='CS5700 Project 1')
+parser.add_argument("-p", default=27995, type=int, help="Port Number of Server")
+parser.add_argument("-s", required=True, action='store_true',  help="Indicates that the client should use an encrypted socket connection")
+parser.add_argument("hostname",  help="Name of the server ")
+parser.add_argument("username", help="Northeastern username")
+
+args = parser.parse_args()
+
+# Some constants 
+PORT_NUMBER = args.p
+SERVER_NAME =args.hostname
+USER_NAME = args.username
+HEADER = "cs5700fall2022 "
+MAX_BYTES = 16384
+ENCODING_TYPE = 'utf-8'
+
+# Instantiating client socket and connecting to server 
+unwrappedSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s = ssl.wrap_socket(unwrappedSocket, ssl_version=ssl.PROTOCOL_TLSv1_2)
+s.connect((SERVER_NAME, PORT_NUMBER))
+
+# Sending intro/hello message to the server 
+INTRO_MESSAGE = HEADER + "HELLO " + USER_NAME + "\n"
+s.sendall(INTRO_MESSAGE.encode(ENCODING_TYPE))
+
+# Function to receive the entire message from the server 
+def recv_all(s):
+    entire_message = ""
+    while True:
+        recieved = s.recv(MAX_BYTES)
+        recieved = recieved.decode(ENCODING_TYPE)
+        entire_message += recieved
+        # The entire message is received when there is a new line character 
+        if '\n' in recieved:
+            break
+    return entire_message.rstrip()
+
+while True: 
+    msg = recv_all(s)
+    # if empty message is received 
+    if len(msg) == 0:
+        # send error back to the server and end the program
+        ERROR_STRING = HEADER + "ERR " + "EMPTY_MESSAGE" + "\n"
+        print(ERROR_STRING)
+        s.send(ERROR_STRING.encode(ENCODING_TYPE)) 
+        break
+    # if EVAL message is received 
+    if msg[len(HEADER)] == 'E':
+        # get expression
+        expression = msg[len(HEADER) + len("EVAL "):]
+        # tokenize expression
+        tokens = Tokenizer(expression).get_all_tokens()
+        # build tree 
+        root = BuildTree(tokens).build()
+        # instantiate calculator
+        calculator = Calculator()
+        try: 
+            # calculate final value
+            value = calculator.calculate(root)
+            # send result back to the server
+            RESULT_STRING = HEADER + "STATUS " + str(value) + "\n"
+            s.send(RESULT_STRING.encode(ENCODING_TYPE))
+        except:
+            # catch error from calculating the final value
+            ERROR_STRING = HEADER + "ERR " + "#DIV/0" + "\n"
+            s.send(ERROR_STRING.encode(ENCODING_TYPE))        
+    # if the BYE message is received 
+    elif msg[len(HEADER)] == 'B':
+        SECRET_FLAG = msg[len(HEADER) + len("BYE "):].rstrip()
+        # if secret flag is "Unknown_Husky_ID", end program
+        if SECRET_FLAG == "Unknown_Husky_ID":
+            break
+        else:
+            # print and write secret flag to file and end program
+            print(SECRET_FLAG)
+            SECRET_FLAG_FILE= open("secret_flags", "w")
+            n = SECRET_FLAG_FILE.write(SECRET_FLAG)
+            SECRET_FLAG_FILE.close()
+            break
+    # if invalid message is received
+    else:
+        # send error back to the server and end the program
+        ERROR_STRING = HEADER + "ERR " + " incorrect field or wrong message type" + "\n"
+        print(ERROR_STRING)
+        s.send(ERROR_STRING.encode(ENCODING_TYPE)) 
+        break
+
+#close socket
+s.close()
